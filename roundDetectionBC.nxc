@@ -1,0 +1,285 @@
+
+int treshold = 45;  //light intensity boarder
+int speed = 40;     //general speed
+int searchWidth = 40;   //initial searchwith in degree
+int searchtime = 40;    //initial search time
+bool firstTurn;         //set to ture if first turn was found
+bool turnComplete;      //set to true if first full round was found
+bool secondTurnComplete; //detection of second round
+int pointer=0;          //pointer to current array position
+long angleSum=0;        //current sum of all angles, clockwise added
+long degrees[200];      //Array of wheel degrees to drive
+int direction[200];     //0=left; 1=right; 2=forward
+
+sub wait(){  //For intersect of Tasks
+    Wait(50);
+}
+
+sub makenoise(){              //sound output for testing
+  SoundPlayToneType sptArgs;
+  sptArgs.Frequency = 440;
+  sptArgs.Duration = 400;
+  sptArgs.Loop = false;
+  sptArgs.SoundLevel = 3;
+  SysSoundPlayTone(sptArgs);
+}
+
+sub makenoise2() {          //sound output for testing
+     SoundPlayToneType sptArgs;
+     sptArgs.Frequency = 200;
+     sptArgs.Duration = 800;
+     sptArgs.Loop = false;
+     sptArgs.SoundLevel = 3;
+     SysSoundPlayTone(sptArgs);
+}
+
+task drive(){
+      OnFwdSync(OUT_BC, speed, 0);
+}
+
+inline void halt() {              //inline due to frequently usage
+    OffEx(OUT_B, RESET_ALL);
+    OffEx(OUT_C, RESET_ALL);
+    Wait(15);                     //time to halt
+}
+
+sub toInitialR(long puffer){             //returns to center
+    while(MotorRotationCount(OUT_C) <= puffer){
+       OnFwdSync(OUT_BC, speed, 100);   //right
+    }
+    halt();
+}
+
+sub toInitialL(long puffer){            //returns to center
+    while(MotorRotationCount(OUT_B) <= (puffer * 10316)/10000){  //correction of the left wheel
+       OnFwdSync(OUT_BC, speed, -100);   //left
+    }
+    halt();
+}
+
+
+task search(){                  //searches for line
+     searchWidth = 40;
+     long puffer = 0;
+	   OnFwd(OUT_BC, speed);
+	   Wait(100);                 //correction of backwardsdrift
+	   halt();
+     ResetRotationCount(OUT_BC);
+     while(true){
+           TextOut(0,LCD_LINE1,"Search");
+           direction[pointer]=0;                    //left
+           while(MotorRotationCount(OUT_B) <= searchWidth)
+           {
+           OnFwdSync(OUT_BC, speed, -100);          //left
+           }
+           puffer = MotorRotationCount(OUT_B);
+           halt();
+           //Back to begin search
+           ResetRotationCount(OUT_BC);
+           puffer = (puffer * 10316)/10000;         //correction of the left wheel
+           toInitialR(puffer);
+           ResetRotationCount(OUT_BC);
+           
+           searchWidth=searchWidth + 100;
+           direction[pointer]=1;                    //right
+           while(MotorRotationCount(OUT_C) <= searchWidth)
+           {
+           OnFwdSync(OUT_BC, speed, 100);            //right
+           }
+           puffer = MotorRotationCount(OUT_C);
+           halt();
+           ResetRotationCount(OUT_BC);
+           puffer = (puffer * 10000)/10316;
+           toInitialL(puffer);
+           searchWidth=searchWidth + 100;
+           ResetRotationCount(OUT_BC);
+   }
+}
+
+
+sub linecheck(){                      //checks if ground is black/line
+   ResetRotationCount(OUT_BC);
+   Wait(50);
+   start drive;
+   TextOut(0,LCD_LINE3,"Drive Forwrd");
+   while(true){
+        if(Sensor(IN_1) > treshold){
+             StopTask(drive);
+             Wait(50);
+             ClearScreen();
+             TextOut(0,LCD_LINE2,"Drive Forward gestoppt");
+             degrees[pointer]=MotorRotationCount(OUT_B);
+             halt();
+             direction[pointer] = 2;
+             pointer++;
+             break;
+        }
+    }
+}
+
+
+sub blankCheck(){                 //checks if ground is blank
+long lastSearchTime;
+long directionSearchTime;
+firstTurn= true;
+    while(true){
+        if(Sensor(IN_1) <= treshold){
+          StopTask(search);
+          Wait(50);
+          ClearScreen();
+          TextOut(0,LCD_LINE2,"Search gestoppt");
+          if(direction[pointer] == 0){      //left{
+            degrees[pointer]=MotorRotationCount(OUT_B);
+          }
+          else                             //right
+          {
+            degrees[pointer]=MotorRotationCount(OUT_C);
+          }
+          halt();
+          switch(direction[pointer]){
+             case 0:
+                 angleSum=(angleSum - (degrees[pointer] * 10316 / 10000));   //correction of the left wheel
+                 break;
+             case 1:
+                 angleSum=(angleSum + degrees[pointer]);   //right
+                 break;
+             case 2:
+                 break;
+             default:
+                 //Failure
+                 makenoise();
+                 break;
+          }
+          pointer++;
+          break;
+       }
+    }
+}
+
+
+task noline(){      //drives saved path without lightsensor
+     int i=0;
+     int x;
+     
+     /*
+     int diff=angleSum;
+     if (angleSum>0) {                                       //current position is "right" from origin
+        while (MotorRotationCount(OUT_A) < angleSum%1016) {  //correct to left
+              OnFwdSync(OUT_AB, speed, -100);
+        }
+     }
+     if (angleSum<0) {                                       //current position is "left" from origin
+        while (MotorRotationCount(OUT_A) < angleSum%1016) {  //correct to right
+              OnFwdSync(OUT_AB, speed, 100);
+        }
+     }
+     */
+     while (degrees[i] != 6000) {             //while not default initialisation
+           ResetRotationCount(OUT_BC);
+           Wait(100);
+           NumOut(0,LCD_LINE8, i);
+           x = direction[i];
+           switch(x){
+               case 0:
+                   while(MotorRotationCount(OUT_B) <= (degrees[i] * 10316 / 10000)){  //correction of the left wheel
+                      OnFwdSync(OUT_BC, speed, -100);   //left
+                   }
+                   halt();
+                   break;
+               case 1:
+                   while(MotorRotationCount(OUT_C) <= degrees[i]){
+                      OnFwdSync(OUT_BC, speed, 100);   //right
+                   }
+                   halt();
+                   break;
+               case 2:
+                   while(MotorRotationCount(OUT_B) <= degrees[i]){
+                      OnFwdSync(OUT_BC, speed, 0);   //Forward
+                   }
+                   halt();
+                   break;
+               default:
+                   //Failure
+                   makenoise();
+                   break;
+           }
+           i = i + 1;
+     }
+}
+
+
+sub roundCheck(){  //checks if complete round was driven
+  if(firstTurn){
+    NumOut(0,LCD_LINE8,angleSum);       //Displays the angleSum
+    if ( pointer>20 && ( angleSum > 900 || angleSum < -900 || (angleSum > -160 && angleSum < 160))) {
+       //Checks: some angles found and
+       //         more/less then 360° driven  or ~0° driven
+       halt();
+       makenoise2();
+       if(turnComplete){
+       secondTurnComplete = true;
+       }
+       turnComplete=true;
+
+    }
+  }
+}
+
+task main(){
+    ResetRotationCount(OUT_BC);
+    firstTurn = false;
+    turnComplete = false;
+    secondTurnComplete = false;
+    SetSensorLight(IN_1);
+  	ArrayInit(degrees,6000,200);       //array initialisation with 6000 as default
+    //first while-loop is for detecting the first round and the starting point
+    while(!turnComplete){
+        linecheck();
+        Wait(50);
+        StartTask(search);
+        blankCheck();
+        roundCheck();
+        Wait(100);
+    }
+	//reinitialise the Array with default 6000
+    ArrayInit(degrees,6000,200);
+    
+	//This section is for driving the Robot parallel to the original starting line
+    int turnsWheelForward = 143; //driving forward, distance is half the robot
+    RotateMotorEx(OUT_BC, speed, turnsWheelForward, 0, true, true);
+    degrees[0]=143;
+    direction[0]=2;
+    halt();
+    ResetRotationCount(OUT_BC);
+	//searching the line in the last direction
+    if(direction[pointer-1] == 0){
+       while(Sensor(IN_1) >= treshold){
+          OnFwdSync(OUT_BC, speed, -100);
+       }
+       degrees[1] = MotorRotationCount(OUT_B);
+       direction[1] = 0;
+    } else{
+       while(Sensor(IN_1) >= treshold){
+          OnFwdSync(OUT_BC, speed, 100);
+       }
+       degrees[1] = MotorRotationCount(OUT_C);
+       direction[1] = 1;
+    }
+    halt();
+    ResetRotationCount(OUT_BC);
+    
+    angleSum=0;
+    pointer = 2;
+	//starting second turn, which will be recorded
+    while(!secondTurnComplete){
+        linecheck();
+        Wait(50);
+        StartTask(search);
+        blankCheck();
+        roundCheck();
+        Wait(100);
+    }
+	Wait(10000);
+	
+	start noline;
+}
